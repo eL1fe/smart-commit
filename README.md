@@ -93,7 +93,7 @@ Smart Commit is a highly customizable CLI utility for creating Git commits inter
 Install Smart Commit globally via npm:
 
 ```bash
-npm install -g smart-commit
+npm install -g @el1fe/smart-commit  
 ```
 
 After installation, the commands smart-commit and the alias sc will be available in your terminal.
