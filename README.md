@@ -145,41 +145,53 @@ sc setup
 
 ## Configuration File
 
-Global settings are stored in ~/.smart-commit-config.json. You can override these settings locally by creating a .smartcommitrc.json file in your project directory.
+Global settings are stored in ~/.smart-commit-config.json. You can override these settings locally by creating a .smartcommitrc.json file in your project directory. To configure Smart Commit, run `sc setup` or you can use the `sc config` command to manually edit the configuration file.
 
-Example configuration file:
+### Configuration Options
+
+Below is a table explaining each configuration option available in Smart Commit, along with their types, default values, descriptions, and examples.
+
+| Option                         | Type     | Default                                                                                                  | Description                                                                                                          | Example                          |
+|--------------------------------|----------|----------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|----------------------------------|
+| **commitTypes**                | Array    | See default list below:<br> • feat: "A new feature"<br> • fix: "A bug fix"<br> • docs: "Documentation changes"<br> • style: "Code style improvements"<br> • refactor: "Code refactoring"<br> • perf: "Performance improvements"<br> • test: "Adding tests"<br> • chore: "Maintenance and chores" | List of available commit types, each with an emoji, a value, and a description.                                     | `[{"emoji": "✨", "value": "feat", "description": "A new feature"}, ...]`  |
+| **autoAdd**                    | Boolean  | false                                                                                                    | If set to true, all changes will be staged automatically before creating a commit.                                   | true                             |
+| **useEmoji**                   | Boolean  | true                                                                                                     | Determines whether emojis are displayed in the commit type selection prompt.                                         | false                            |
+| **ciCommand**                  | String   | ""                                                                                                       | Command to run CI tests before committing. If provided, CI tests will run automatically when prompted.                | "npm test"                       |
+| **templates.defaultTemplate**  | String   | `[{type}]{ticketSeparator}{ticket}: {summary}\n\nBody:\n{body}\n\nFooter:\n{footer}`                     | Template used to format the commit message. Placeholders will be replaced with user-provided or auto-generated content.   | `"[{type}]: {summary}"`           |
+| **steps.scope**                | Boolean  | false                                                                                                    | Whether to prompt for a commit scope (an optional field).                                                            | true                             |
+| **steps.body**                 | Boolean  | false                                                                                                    | Whether to prompt for a detailed commit body.                                                                        | true                             |
+| **steps.footer**               | Boolean  | false                                                                                                    | Whether to prompt for additional commit footer information.                                                          | true                             |
+| **steps.ticket**               | Boolean  | false                                                                                                    | Whether to prompt for a ticket ID. If enabled and left empty, ticket ID might be auto-extracted using the regex.        | true                             |
+| **steps.runCI**                | Boolean  | false                                                                                                    | Whether to prompt for running CI tests before committing.                                                            | true                             |
+| **ticketRegex**                | String   | ""                                                                                                       | A regular expression used to extract a ticket ID from the current branch name.                                         | `"^(DEV-\\d+)"`                  |
+| **enableLint**                 | Boolean  | false                                                                                                    | Enables commit message linting based on specified linting rules.                                                      | true                             |
+| **lintRules.summaryMaxLength** | Number   | 72                                                                                                       | Maximum allowed length for the commit summary.                                                                       | 72                               |
+| **lintRules.typeCase**         | String   | "lowercase"                                                                                              | Specifies the required case for the first character of the commit summary.                                            | "lowercase"                      |
+| **lintRules.requiredTicket**   | Boolean  | false                                                                                                    | If true, a ticket ID is required in the commit message.                                                              | true                             |
+
+### Example of a Local Configuration File (`.smartcommitrc.json`)
 
 ```json
 {
-  "commitTypes": [
-    { "emoji": "✨", "value": "feat", "description": "A new feature" },
-    { "emoji": "🐛", "value": "fix", "description": "A bug fix" },
-    { "emoji": "📝", "value": "docs", "description": "Documentation changes" },
-    { "emoji": "💄", "value": "style", "description": "Code style improvements" },
-    { "emoji": "♻️", "value": "refactor", "description": "Code refactoring" },
-    { "emoji": "🚀", "value": "perf", "description": "Performance improvements" },
-    { "emoji": "✅", "value": "test", "description": "Adding tests" },
-    { "emoji": "🔧", "value": "chore", "description": "Maintenance and chores" }
-  ],
-  "autoAdd": false,
+  "autoAdd": true,
   "useEmoji": true,
   "ciCommand": "npm test",
   "templates": {
-    "defaultTemplate": "[{type}]{ticketSeparator}{ticket}: {summary}\n\nBody:\n{body}\n\nFooter:\n{footer}"
+    "defaultTemplate": "[{type}]: {summary}"
   },
   "steps": {
-    "scope": false,
-    "body": false,
-    "footer": false,
-    "ticket": false,
-    "runCI": false
+    "scope": true,
+    "body": true,
+    "footer": true,
+    "ticket": true,
+    "runCI": true
   },
-  "ticketRegex": "",
-  "enableLint": false,
+  "ticketRegex": "^(DEV-\\d+)",
+  "enableLint": true,
   "lintRules": {
     "summaryMaxLength": 72,
     "typeCase": "lowercase",
-    "requiredTicket": false
+    "requiredTicket": true
   }
 }
 ```
