@@ -1,38 +1,23 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
-import inquirer, { Answers, Question } from 'inquirer';
+import inquirer, { Question } from 'inquirer';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
+import chalk from 'chalk';
 
 /**
- * Type alias for an input question.
- * @template T - The answer type.
+ * Question type without using generic Answers<any>.
  */
-type InputQuestion<T extends Answers<any>> = Question<T> & { type: 'input' };
+type InputQuestion = Question & { type: 'input' };
+type ListQuestion = Question & { type: 'list' };
+type ConfirmQuestion = Question & { type: 'confirm' };
+type EditorQuestion = Question & { type: 'editor' };
 
 /**
- * Type alias for a list question.
- * @template T - The answer type.
- */
-type ListQuestion<T extends Answers<any>> = Question<T> & { type: 'list' };
-
-/**
- * Type alias for a confirm question.
- * @template T - The answer type.
- */
-type ConfirmQuestion<T extends Answers<any>> = Question<T> & { type: 'confirm' };
-
-/**
- * Type alias for an editor question.
- * @template T - The answer type.
- */
-type EditorQuestion<T extends Answers<any>> = Question<T> & { type: 'editor' };
-
-/**
- * Interface representing a commit type.
+ * Represents a commit type (with emoji, value, description).
  */
 interface CommitType {
     emoji: string;
@@ -41,15 +26,23 @@ interface CommitType {
 }
 
 /**
- * Interface representing commit message templates.
+ * Represents commit message templates.
  */
 interface Templates {
-    /** Default commit message template. Available placeholders: {ticket}, {ticketSeparator}, {type}, {scope}, {summary}, {body}, {footer} */
     defaultTemplate: string;
 }
 
 /**
- * Interface for the configuration settings.
+ * Represents linting rules for commit messages.
+ */
+interface LintRules {
+    summaryMaxLength: number;
+    typeCase: string; // e.g. 'lowercase'
+    requiredTicket: boolean;
+}
+
+/**
+ * Main configuration interface.
  */
 interface Config {
     commitTypes: CommitType[];
@@ -64,14 +57,20 @@ interface Config {
         ticket: boolean;
         runCI: boolean;
     };
-    /** Regular expression for ticket extraction from branch name (empty string if none) */
     ticketRegex: string;
+    enableLint: boolean;
+    lintRules: LintRules;
+    // enableHooks: boolean; // TODO: implement hooks
 }
 
-/** Global configuration file path */
+/**
+ * Path to the global config file in the user's home directory.
+ */
 const CONFIG_PATH = path.join(os.homedir(), '.smart-commit-config.json');
 
-/** Default configuration settings */
+/**
+ * Default configuration values.
+ */
 const defaultConfig: Config = {
     commitTypes: [
         { emoji: "✨", value: "feat", description: "A new feature" },
@@ -85,12 +84,10 @@ const defaultConfig: Config = {
     ],
     autoAdd: false,
     useEmoji: true,
-    ciCommand: "npm test",
+    ciCommand: "",
     templates: {
-        // Default template. If a ticket is provided, it will be prefixed.
         defaultTemplate: "[{type}]{ticketSeparator}{ticket}: {summary}\n\nBody:\n{body}\n\nFooter:\n{footer}"
     },
-    // By default, only type and summary are enabled.
     steps: {
         scope: false,
         body: false,
@@ -98,52 +95,58 @@ const defaultConfig: Config = {
         ticket: false,
         runCI: false,
     },
-    ticketRegex: ""
+    ticketRegex: "",
+    enableLint: false,
+    lintRules: {
+        summaryMaxLength: 72,
+        typeCase: "lowercase",
+        requiredTicket: false,
+    },
+    // enableHooks: false,
 };
 
 /**
- * Loads the global configuration from disk.
- * If the file does not exist or fails to load, returns the default configuration.
- * Then, if a local config (.smartcommitrc.json) exists in the current directory,
- * merges its properties into the global config.
- * @returns {Config} The loaded (and merged) configuration.
+ * Loads the global and local config, merging them if both exist.
  */
 function loadConfig(): Config {
     let config: Config = defaultConfig;
+
     if (fs.existsSync(CONFIG_PATH)) {
         try {
             const data = fs.readFileSync(CONFIG_PATH, 'utf8');
             config = JSON.parse(data) as Config;
-        } catch (err) {
-            console.error("Error reading global config, using default settings.");
+        } catch {
+            console.error(chalk.red("Error reading global config, using default settings."));
         }
     }
-    // Check for local configuration file
     const localConfigPath = path.join(process.cwd(), '.smartcommitrc.json');
     if (fs.existsSync(localConfigPath)) {
         try {
             const localData = fs.readFileSync(localConfigPath, 'utf8');
             const localConfig = JSON.parse(localData) as Partial<Config>;
-            // Merge local config over global config (shallow merge)
             config = { ...config, ...localConfig };
-        } catch (err) {
-            console.error("Error reading local config, ignoring.");
+        } catch {
+            console.error(chalk.red("Error reading local config, ignoring."));
         }
     }
+
+    if (!config.lintRules) {
+        config.lintRules = { ...defaultConfig.lintRules };
+    }
+
     return config;
 }
 
 /**
- * Saves the global configuration to disk.
- * @param {Config} config - The configuration to save.
+ * Saves the config to disk (global config).
  */
 function saveConfig(config: Config): void {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
-    console.log("Global configuration saved at", CONFIG_PATH);
+    console.log(chalk.green("Global configuration saved at"), CONFIG_PATH);
 }
 
 /**
- * Interface for answers collected during commit creation.
+ * Answers interface for commit creation.
  */
 interface CommitAnswers {
     type: string;
@@ -160,9 +163,7 @@ interface CommitAnswers {
 }
 
 /**
- * Computes a default commit summary based on staged changes.
- * It checks for common files and keywords and merges results.
- * @returns {string} The auto-generated summary.
+ * Generates a default summary by analyzing staged changes.
  */
 function computeAutoSummary(): string {
     let summaries: string[] = [];
@@ -171,30 +172,18 @@ function computeAutoSummary(): string {
             .split('\n')
             .filter(f => f.trim() !== '');
         if (diffFiles.length > 0) {
-            if (diffFiles.includes('package.json')) {
-                summaries.push('Update dependencies');
-            }
-            if (diffFiles.some(f => f.includes('Dockerfile'))) {
-                summaries.push('Update Docker configuration');
-            }
-            if (diffFiles.some(f => f.endsWith('.md'))) {
-                summaries.push('Update documentation');
-            }
-            if (diffFiles.some(f => f.startsWith('src/') || f.endsWith('.ts') || f.endsWith('.js'))) {
-                summaries.push('Update source code');
-            }
-            // Merge multiple summaries if any
+            if (diffFiles.includes('package.json')) summaries.push('Update dependencies');
+            if (diffFiles.some(f => f.includes('Dockerfile'))) summaries.push('Update Docker configuration');
+            if (diffFiles.some(f => f.endsWith('.md'))) summaries.push('Update documentation');
+            if (diffFiles.some(f => f.startsWith('src/') || f.endsWith('.ts') || f.endsWith('.js'))) summaries.push('Update source code');
             return summaries.join(', ');
         }
-    } catch (err) {
-        // If diff fails, return empty string
-    }
+    } catch { }
     return '';
 }
 
 /**
  * Suggests a commit type based on staged files.
- * @returns {string | null} Suggested commit type or null if none.
  */
 function suggestCommitType(): string | null {
     try {
@@ -206,234 +195,114 @@ function suggestCommitType(): string | null {
             if (diffFiles.includes('package.json')) return 'chore';
             if (diffFiles.some(f => f.startsWith('src/'))) return 'feat';
         }
-    } catch (err) {
-        // ignore
-    }
+    } catch { }
     return null;
+}
+
+/**
+ * Lints the commit message using specified rules.
+ */
+function lintCommitMessage(message: string, rules: LintRules): string[] {
+    const errors: string[] = [];
+    const lines = message.split('\n');
+    const summary = lines[0].trim();
+    if (summary.length > rules.summaryMaxLength) {
+        errors.push(`Summary is too long (${summary.length} characters). Max allowed is ${rules.summaryMaxLength}.`);
+    }
+    if (rules.typeCase === 'lowercase' && summary && summary[0] !== summary[0].toLowerCase()) {
+        errors.push("Summary should start with a lowercase letter.");
+    }
+    if (rules.requiredTicket && !message.includes('#')) {
+        errors.push("A ticket ID is required in the commit message (e.g., '#DEV-123').");
+    }
+    return errors;
+}
+
+/**
+ * Interactive preview of the commit message with optional linting fix.
+ */
+async function previewCommitMessage(message: string, lintRules: LintRules): Promise<string> {
+    console.log(chalk.blue("\nPreview commit message:\n"));
+    console.log(message);
+    const { confirmPreview } = await inquirer.prompt([
+        {
+            type: 'confirm',
+            name: 'confirmPreview',
+            message: 'Does the commit message look OK?',
+            default: true,
+        }
+    ]);
+    if (confirmPreview) {
+        const errors = lintCommitMessage(message, lintRules);
+        if (errors.length > 0) {
+            console.log(chalk.red("Linting errors:"));
+            errors.forEach(err => console.log(chalk.red("- " + err)));
+            const { editedMessage } = await inquirer.prompt([
+                {
+                    type: 'editor',
+                    name: 'editedMessage',
+                    message: 'Edit the commit message to fix these issues:',
+                    default: message,
+                }
+            ]);
+            return previewCommitMessage(editedMessage, lintRules);
+        } else {
+            return message;
+        }
+    } else {
+        const { editedMessage } = await inquirer.prompt([
+            {
+                type: 'editor',
+                name: 'editedMessage',
+                message: 'Edit the commit message as needed:',
+                default: message,
+            }
+        ]);
+        return previewCommitMessage(editedMessage, lintRules);
+    }
+}
+
+/**
+ * Shows a preview of the staged diff.
+ */
+function showDiffPreview(): void {
+    try {
+        const diff = execSync('git diff --staged | npx diff-so-fancy', { encoding: 'utf8' });
+        if (diff.trim() === "") {
+            console.log(chalk.yellow("No staged changes to show."));
+        } else {
+            console.log(chalk.green("\nStaged Diff Preview:\n"));
+            console.log(chalk.green(diff));
+        }
+    } catch (err: any) {
+        console.error(chalk.red("Error retrieving diff:"), err.message);
+    }
 }
 
 program
     .name('sc')
     .description('Smart Commit CLI Tool - Create customizable Git commits with ease.')
-    .version('1.0.0');
+    .version('1.1.2');
 
-program.addHelpText('beforeAll', `
+program.addHelpText('beforeAll', chalk.blue(`
 ========================================
  Welcome to Smart Commit CLI!
 ========================================
-`);
+`));
 
-program.addHelpText('afterAll', `
+program.addHelpText('afterAll', chalk.blue(`
 Examples:
   sc commit        # Start interactive commit prompt
-  sc config        # View or edit configuration (pretty printed)
-  sc setup         # Run initial setup wizard
-  sc ci            # Run CI tests
-  sc stats         # Show commit statistics for the last week
-`);
+  sc amend         # Amend the last commit interactively
+  sc rollback      # Rollback the last commit (soft or hard reset)
+  sc rebase-helper # Launch interactive rebase helper
+  sc ci            # Run CI tests as configured
+  sc stats         # Show enhanced commit statistics
+  sc history       # Show commit history with filtering
+  sc config        # Configure or view settings
+  sc setup         # Run interactive setup wizard
+`));
 
-/**
- * Commit command: prompts the user for commit details and creates a Git commit.
- */
-program
-    .command('commit')
-    .alias('c')
-    .description('Create a commit with interactive prompts')
-    .option('--push', 'Push commit to remote after creation', false)
-    .option('--sign', 'Sign commit with GPG', false)
-    .action(async (cmdObj) => {
-        const config = loadConfig();
-        const suggestedType = suggestCommitType();
-        const commitTypeChoices = config.commitTypes.map(ct => ({
-            name: config.useEmoji
-                ? `${ct.emoji} ${ct.value} (${ct.description})`
-                : `${ct.value} (${ct.description})`,
-            value: ct.value,
-        }));
-        const autoSummary = computeAutoSummary();
-
-        const questions: (ListQuestion<CommitAnswers> | InputQuestion<CommitAnswers> | ConfirmQuestion<CommitAnswers> | EditorQuestion<CommitAnswers>)[] = [];
-        questions.push({
-            type: 'list',
-            name: 'type',
-            message: 'Select commit type:',
-            choices: commitTypeChoices,
-            default: suggestedType || undefined,
-        } as ListQuestion<CommitAnswers>);
-
-        if (config.steps.scope) {
-            questions.push({
-                type: 'input',
-                name: 'scope',
-                message: 'Enter scope (optional):',
-            } as InputQuestion<CommitAnswers>);
-        }
-
-        questions.push({
-            type: 'input',
-            name: 'summary',
-            message: 'Enter commit summary:',
-            default: autoSummary,
-            validate: (input: string) => input ? true : 'Summary cannot be empty',
-        } as InputQuestion<CommitAnswers>);
-
-        if (config.steps.body) {
-            questions.push({
-                type: 'editor',
-                name: 'body',
-                message: 'Enter commit body (your default editor will open, leave empty to skip):',
-            } as EditorQuestion<CommitAnswers>);
-        }
-
-        if (config.steps.footer) {
-            questions.push({
-                type: 'input',
-                name: 'footer',
-                message: 'Enter commit footer (optional):',
-            } as InputQuestion<CommitAnswers>);
-        }
-
-        if (config.steps.ticket) {
-            questions.push({
-                type: 'input',
-                name: 'ticket',
-                message: 'Enter ticket ID (optional):',
-            } as InputQuestion<CommitAnswers>);
-        }
-
-        if (config.steps.runCI) {
-            questions.push({
-                type: 'confirm',
-                name: 'runCI',
-                message: 'Run CI tests before commit?',
-                default: false,
-            } as ConfirmQuestion<CommitAnswers>);
-        }
-
-        questions.push({
-            type: 'confirm',
-            name: 'autoAdd',
-            message: 'Stage all changes before commit?',
-            default: config.autoAdd,
-        } as ConfirmQuestion<CommitAnswers>);
-
-        questions.push({
-            type: 'confirm',
-            name: 'confirmCommit',
-            message: 'Confirm and execute commit?',
-            default: true,
-        } as ConfirmQuestion<CommitAnswers>);
-
-        const answers = (await inquirer.prompt(questions as any)) as CommitAnswers;
-        if (answers.scope === undefined) answers.scope = "";
-        if (answers.body === undefined) answers.body = "";
-        if (answers.footer === undefined) answers.footer = "";
-        if (answers.ticket === undefined) answers.ticket = "";
-        if (answers.runCI === undefined) answers.runCI = false;
-
-        if (config.steps.ticket && !answers.ticket && config.ticketRegex) {
-            try {
-                const branchName = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8" }).trim();
-                const re = new RegExp(config.ticketRegex);
-                const match = branchName.match(re);
-                if (match && match[0]) {
-                    answers.ticket = match[0];
-                    console.log(`Extracted ticket from branch: ${answers.ticket}`);
-                }
-            } catch (err) {
-                // Ignore extraction errors
-            }
-        }
-
-        if (answers.runCI) {
-            try {
-                console.log('Running CI tests...');
-                execSync(config.ciCommand, { stdio: 'inherit' });
-                console.log('CI tests passed!');
-            } catch (err: any) {
-                console.error('CI tests failed:', err.message);
-                process.exit(1);
-            }
-        }
-
-        if (!answers.confirmCommit) {
-            console.log('Commit cancelled.');
-            process.exit(0);
-        }
-
-        const scopeFormatted = answers.scope && answers.scope.trim() !== '' ? `(${answers.scope.trim()})` : '';
-        const ticketSeparator = answers.ticket && answers.ticket.trim() !== '' ? ": " : "";
-        let commitMsg = config.templates.defaultTemplate
-            .replace('{ticket}', answers.ticket.trim())
-            .replace('{ticketSeparator}', ticketSeparator)
-            .replace('{type}', answers.type)
-            .replace('{scope}', scopeFormatted)
-            .replace('{summary}', answers.summary.trim())
-            .replace('{body}', answers.body.trim())
-            .replace('{footer}', answers.footer.trim());
-
-        try {
-            if (answers.autoAdd) {
-                execSync('git add .', { stdio: 'inherit' });
-            }
-            const commitCommand = cmdObj.sign
-                ? `git commit -S -m "${commitMsg.replace(/"/g, '\\"')}"`
-                : `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`;
-            execSync(commitCommand, { stdio: 'inherit' });
-            console.log('Commit successful!');
-        } catch (err: any) {
-            console.error('Error during commit:', err.message);
-            process.exit(1);
-        }
-
-        if (cmdObj.push) {
-            try {
-                execSync('git push', { stdio: 'inherit' });
-                console.log('Pushed successfully!');
-            } catch (err: any) {
-                console.error('Push failed:', err.message);
-            }
-        }
-    });
-
-//
-// CI Command (alias "rci")
-//
-program
-    .command('ci')
-    .alias('rci')
-    .description('Run CI tests as configured')
-    .action(() => {
-        const config = loadConfig();
-        try {
-            console.log('Running CI tests...');
-            execSync(config.ciCommand, { stdio: 'inherit' });
-            console.log('CI tests passed!');
-        } catch (err: any) {
-            console.error('CI tests failed:', err.message);
-            process.exit(1);
-        }
-    });
-
-//
-// Stats Command: shows commit statistics for the last week.
-//
-program
-    .command('stats')
-    .description('Show commit statistics for the last week')
-    .action(() => {
-        try {
-            execSync('git shortlog -s -n --since="1 week ago"', { stdio: 'inherit' });
-        } catch (err: any) {
-            console.error('Error retrieving stats:', err.message);
-            process.exit(1);
-        }
-    });
-
-//
-// Config Command (alias "cfg")
-// Outputs current configuration in a table format if no options are provided.
-//
 program
     .command('config')
     .alias('cfg')
@@ -448,20 +317,12 @@ program
     .option('--enable-ticket <bool>', 'Enable ticket prompt (true/false)', (value: string) => value === 'true')
     .option('--enable-run-ci <bool>', 'Enable CI prompt (true/false)', (value: string) => value === 'true')
     .option('--ticket-regex <regex>', 'Set regex for ticket extraction from branch name')
-    .action((options: {
-        autoAdd?: boolean;
-        useEmoji?: boolean;
-        ciCommand?: string;
-        template?: string;
-        enableScope?: boolean;
-        enableBody?: boolean;
-        enableFooter?: boolean;
-        enableTicket?: boolean;
-        enableRunCi?: boolean;
-        ticketRegex?: string;
-    }) => {
+    .option('--enable-lint <bool>', 'Enable commit message linting (true/false)', (value: string) => value === 'true')
+    .option('--enable-hooks <bool>', 'Enable Git Hooks installation (true/false)', (value: string) => value === 'true')
+    .action((options) => {
         const config = loadConfig();
         let changed = false;
+
         if (options.autoAdd !== undefined) {
             config.autoAdd = options.autoAdd;
             changed = true;
@@ -502,16 +363,27 @@ program
             config.ticketRegex = options.ticketRegex;
             changed = true;
         }
+        if (options.enableLint !== undefined) {
+            config.enableLint = options.enableLint;
+            changed = true;
+        }
+        // if (options.enableHooks !== undefined) {
+        //     config.enableHooks = options.enableHooks;
+        //     changed = true;
+        // }
+
         if (changed) {
             saveConfig(config);
         } else {
-            console.log("Current configuration:\n");
+            console.log("\nCurrent configuration:\n");
 
             console.table([
                 { Key: 'autoAdd', Value: config.autoAdd },
                 { Key: 'useEmoji', Value: config.useEmoji },
                 { Key: 'ciCommand', Value: config.ciCommand },
-                { Key: 'ticketRegex', Value: config.ticketRegex }
+                { Key: 'ticketRegex', Value: config.ticketRegex },
+                { Key: 'enableLint', Value: config.enableLint },
+                // { Key: 'enableHooks', Value: config.enableHooks },
             ]);
 
             console.log("\nSteps (prompts enabled):");
@@ -523,6 +395,15 @@ program
                 { Step: 'runCI', Enabled: config.steps.runCI }
             ]);
 
+            console.log("\nLint Rules:");
+            console.table([
+                {
+                    summaryMaxLength: config.lintRules.summaryMaxLength,
+                    typeCase: config.lintRules.typeCase,
+                    requiredTicket: config.lintRules.requiredTicket
+                }
+            ]);
+
             console.log("\nCommit Types:");
             console.table(config.commitTypes);
 
@@ -530,10 +411,6 @@ program
         }
     });
 
-//
-// Setup Command
-// Runs an interactive setup wizard for initial configuration.
-//
 program
     .command('setup')
     .description('Interactive setup for Smart Commit configuration')
@@ -593,9 +470,22 @@ program
                 name: 'ciCommand',
                 message: 'Enter CI command (leave blank for none):',
                 default: ""
-            }
+            },
+            {
+                type: 'confirm',
+                name: 'enableLint',
+                message: 'Enable commit message linting?',
+                default: false
+            },
+            // {
+            //     type: 'confirm',
+            //     name: 'enableHooks',
+            //     message: 'Enable Git Hooks installation?',
+            //     default: false
+            // }
         ];
         const setupAnswers = await inquirer.prompt(questions as any);
+
         const newConfig: Config = {
             ...defaultConfig,
             autoAdd: setupAnswers.autoAdd,
@@ -610,10 +500,431 @@ program
                 ticket: setupAnswers.enableTicket,
                 runCI: setupAnswers.enableRunCi,
             },
-            ticketRegex: setupAnswers.ticketRegex || ""
+            ticketRegex: setupAnswers.ticketRegex || "",
+            enableLint: setupAnswers.enableLint,
+            // enableHooks: setupAnswers.enableHooks,
         };
         saveConfig(newConfig);
         console.log("Setup complete!");
+    });
+
+program
+    .command('commit')
+    .alias('c')
+    .description('Create a commit with interactive prompts')
+    .option('--push', 'Push commit to remote after creation', false)
+    .option('--sign', 'Sign commit with GPG', false)
+    .option('--no-lint', 'Skip commit message linting', false)
+    .action(async (cmdObj: { lint: boolean; sign: any; push: any; }) => {
+        const config = loadConfig();
+        const suggestedType = suggestCommitType();
+        const commitTypeChoices = config.commitTypes.map(ct => ({
+            name: config.useEmoji
+                ? `${ct.emoji} ${ct.value} (${ct.description})`
+                : `${ct.value} (${ct.description})`,
+            value: ct.value,
+        }));
+        const autoSummary = computeAutoSummary();
+
+        const questions: (ListQuestion | InputQuestion | ConfirmQuestion | EditorQuestion)[] = [];
+        questions.push({
+            type: 'list',
+            name: 'type',
+            message: 'Select commit type:',
+            choices: commitTypeChoices,
+            default: suggestedType || undefined,
+        } as ListQuestion);
+
+        if (config.steps.scope) {
+            questions.push({
+                type: 'input',
+                name: 'scope',
+                message: 'Enter scope (optional):',
+            } as InputQuestion);
+        }
+        questions.push({
+            type: 'input',
+            name: 'summary',
+            message: 'Enter commit summary:',
+            default: autoSummary,
+            validate: (input: string) => input ? true : 'Summary cannot be empty',
+        } as InputQuestion);
+
+        if (config.steps.body) {
+            questions.push({
+                type: 'editor',
+                name: 'body',
+                message: 'Enter commit body (your default editor will open, leave empty to skip):',
+            } as EditorQuestion);
+        }
+
+        if (config.steps.footer) {
+            questions.push({
+                type: 'input',
+                name: 'footer',
+                message: 'Enter commit footer (optional):',
+            } as InputQuestion);
+        }
+
+        if (config.steps.ticket) {
+            questions.push({
+                type: 'input',
+                name: 'ticket',
+                message: 'Enter ticket ID (optional):',
+            } as InputQuestion);
+        }
+
+        if (config.steps.runCI) {
+            questions.push({
+                type: 'confirm',
+                name: 'runCI',
+                message: 'Run CI tests before commit?',
+                default: false,
+            } as ConfirmQuestion);
+        }
+
+        questions.push({
+            type: 'confirm',
+            name: 'autoAdd',
+            message: 'Stage all changes before commit?',
+            default: config.autoAdd,
+        } as ConfirmQuestion);
+
+        questions.push({
+            type: 'confirm',
+            name: 'confirmCommit',
+            message: 'Confirm and execute commit?',
+            default: true,
+        } as ConfirmQuestion);
+
+        const answers = await inquirer.prompt(questions) as CommitAnswers;
+        if (!answers.scope) answers.scope = "";
+        if (!answers.body) answers.body = "";
+        if (!answers.footer) answers.footer = "";
+        if (!answers.ticket) answers.ticket = "";
+        if (!answers.runCI) answers.runCI = false;
+
+        if (config.steps.ticket && !answers.ticket && config.ticketRegex) {
+            try {
+                const branchName = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8" }).trim();
+                const re = new RegExp(config.ticketRegex);
+                const match = branchName.match(re);
+                if (match && match[0]) {
+                    answers.ticket = match[0];
+                    console.log(chalk.cyan(`Extracted ticket from branch: ${answers.ticket}`));
+                }
+            } catch { }
+        }
+
+        if (answers.runCI) {
+            try {
+                console.log(chalk.blue('Running CI tests...'));
+                execSync(config.ciCommand, { stdio: 'inherit' });
+                console.log(chalk.green('CI tests passed!'));
+            } catch (err: any) {
+                console.error(chalk.red('CI tests failed:'), err.message);
+                process.exit(1);
+            }
+        }
+
+        if (answers.autoAdd) {
+            execSync('git add .', { stdio: 'inherit' });
+        }
+
+        const { diffPreview } = await inquirer.prompt([
+            {
+                type: 'confirm',
+                name: 'diffPreview',
+                message: 'Would you like to view the staged diff preview?',
+                default: false,
+            }
+        ]);
+        if (diffPreview) {
+            showDiffPreview();
+            const { diffConfirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'diffConfirm',
+                    message: 'Does the staged diff look OK?',
+                    default: true,
+                }
+            ]);
+            if (!diffConfirm) {
+                console.log(chalk.yellow("Commit cancelled due to diff review."));
+                process.exit(0);
+            }
+        }
+
+        if (!answers.confirmCommit) {
+            console.log(chalk.yellow('Commit cancelled.'));
+            process.exit(0);
+        }
+
+        const scopeFormatted = answers.scope.trim() !== '' ? `(${answers.scope.trim()})` : '';
+        const ticketSeparator = answers.ticket.trim() !== '' ? ": " : "";
+        let commitMsg = config.templates.defaultTemplate
+            .replace('{ticket}', answers.ticket.trim())
+            .replace('{ticketSeparator}', ticketSeparator)
+            .replace('{type}', answers.type)
+            .replace('{scope}', scopeFormatted)
+            .replace('{summary}', answers.summary.trim())
+            .replace('{body}', answers.body.trim())
+            .replace('{footer}', answers.footer.trim());
+
+        if (cmdObj.lint !== false && config.enableLint) {
+            commitMsg = await previewCommitMessage(commitMsg, config.lintRules);
+        } else {
+            const { previewChoice } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'previewChoice',
+                    message: 'Preview commit message?',
+                    default: true,
+                }
+            ]);
+            if (previewChoice) {
+                console.log(chalk.blue("\nPreview commit message:\n"));
+                console.log(commitMsg);
+            }
+        }
+
+        try {
+            const commitCommand = cmdObj.sign
+                ? `git commit -S -m "${commitMsg.replace(/"/g, '\\"')}"`
+                : `git commit -m "${commitMsg.replace(/"/g, '\\"')}"`;
+            execSync(commitCommand, { stdio: 'inherit' });
+            console.log(chalk.green('Commit successful!'));
+        } catch (err: any) {
+            console.error(chalk.red('Error during commit:'), err.message);
+            process.exit(1);
+        }
+
+        if (cmdObj.push) {
+            try {
+                execSync('git push', { stdio: 'inherit' });
+                console.log(chalk.green('Pushed successfully!'));
+            } catch (err: any) {
+                console.error(chalk.red('Push failed:'), err.message);
+            }
+        }
+    });
+
+program
+    .command('amend')
+    .description('Amend the last commit interactively')
+    .action(async () => {
+        const config = loadConfig();
+        try {
+            const currentMsg = execSync('git log -1 --pretty=%B', { encoding: 'utf8' }).trim();
+            console.log(chalk.blue("Current commit message:\n") + currentMsg);
+            const { amendConfirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'amendConfirm',
+                    message: 'Do you want to amend the last commit?',
+                    default: true,
+                }
+            ]);
+            if (!amendConfirm) {
+                console.log(chalk.yellow("Amend cancelled."));
+                process.exit(0);
+            }
+            const { newMessage } = await inquirer.prompt([
+                {
+                    type: 'editor',
+                    name: 'newMessage',
+                    message: 'Edit the commit message:',
+                    default: currentMsg,
+                }
+            ]);
+            const errors = config.enableLint ? lintCommitMessage(newMessage, config.lintRules) : [];
+            if (errors.length > 0) {
+                console.log(chalk.red("Linting errors:"));
+                errors.forEach(err => console.log(chalk.red("- " + err)));
+                console.log(chalk.red("Amend aborted due to linting errors."));
+                process.exit(1);
+            }
+            execSync(`git commit --amend -m "${newMessage.replace(/"/g, '\\"')}"`, { stdio: 'inherit' });
+            console.log(chalk.green("Commit amended successfully!"));
+        } catch (err: any) {
+            console.error(chalk.red("Error during amend:"), err.message);
+            process.exit(1);
+        }
+    });
+
+program
+    .command('rollback')
+    .description('Rollback the last commit while choosing between soft and hard reset')
+    .action(async () => {
+        const { resetType } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'resetType',
+                message: 'Choose rollback type:',
+                choices: [
+                    { name: 'Soft reset (keep changes staged)', value: 'soft' },
+                    { name: 'Hard reset (discard changes)', value: 'hard' }
+                ],
+            }
+        ]);
+        const { confirmRollback } = await inquirer.prompt([
+            {
+                type: 'confirm',
+                name: 'confirmRollback',
+                message: `This will perform a ${resetType} reset on the last commit. Continue?`,
+                default: false,
+            }
+        ]);
+        if (!confirmRollback) {
+            console.log(chalk.yellow("Rollback cancelled."));
+            process.exit(0);
+        }
+        try {
+            if (resetType === 'soft') {
+                execSync('git reset --soft HEAD~1', { stdio: 'inherit' });
+            } else {
+                execSync('git reset --hard HEAD~1', { stdio: 'inherit' });
+            }
+            console.log(chalk.green("Rollback successful!"));
+        } catch (err: any) {
+            console.error(chalk.red("Error during rollback:"), err.message);
+            process.exit(1);
+        }
+    });
+
+program
+    .command('rebase-helper')
+    .description('Launch interactive rebase helper with explanations')
+    .action(async () => {
+        const { commitCount } = await inquirer.prompt([
+            {
+                type: 'input',
+                name: 'commitCount',
+                message: 'Enter the number of commits to rebase (e.g., 3):',
+                validate: (input: string) => {
+                    const num = parseInt(input, 10);
+                    return (!isNaN(num) && num > 0) || 'Please enter a valid positive number';
+                }
+            }
+        ]);
+        try {
+            console.log(chalk.blue(`Launching interactive rebase for the last ${commitCount} commits.`));
+            console.log(chalk.blue("In the rebase editor, use the following commands as needed:\n- pick: use the commit\n- reword: use the commit, but edit the commit message\n- edit: stop for amending the commit\n- squash: meld the commit into the previous commit\n- fixup: like squash but discard this commit's message\n- exec: run a shell command\n- drop: remove the commit"));
+            execSync(`git rebase -i HEAD~${commitCount}`, { stdio: 'inherit' });
+            console.log(chalk.green("Interactive rebase completed."));
+        } catch (err: any) {
+            console.error(chalk.red("Error during interactive rebase:"), err.message);
+            process.exit(1);
+        }
+    });
+
+program
+    .command('stats')
+    .description('Show enhanced commit statistics with ASCII graphs')
+    .action(async () => {
+        const { period } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'period',
+                message: 'Select period for statistics:',
+                choices: [
+                    { name: 'Day', value: '1 day ago' },
+                    { name: 'Week', value: '1 week ago' },
+                    { name: 'Month', value: '1 month ago' }
+                ],
+            }
+        ]);
+        const { statsType } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'statsType',
+                message: 'Select type of statistics:',
+                choices: [
+                    { name: 'Shortlog by author', value: 'shortlog' },
+                    { name: 'Activity by date', value: 'activity' }
+                ],
+            }
+        ]);
+        try {
+            if (statsType === 'shortlog') {
+                execSync(`git shortlog -s -n --since="${period}"`, { stdio: 'inherit' });
+            } else if (statsType === 'activity') {
+                const datesOutput = execSync(`git log --since="${period}" --pretty=format:"%ad" --date=short`, { encoding: 'utf8' });
+                const dates = datesOutput.split('\n').filter(Boolean);
+                const counts: { [date: string]: number } = {};
+                dates.forEach(date => { counts[date] = (counts[date] || 0) + 1; });
+                const sortedDates = Object.keys(counts).sort();
+                console.log(chalk.blue("\nCommit Activity:"));
+                sortedDates.forEach(date => {
+                    const count = counts[date];
+                    const bar = "#".repeat(count);
+                    console.log(chalk.green(`${date}: ${bar} (${count})`));
+                });
+            }
+        } catch (err: any) {
+            console.error(chalk.red("Error retrieving statistics:"), err.message);
+            process.exit(1);
+        }
+    });
+
+program
+    .command('history')
+    .description('Show commit history with search options')
+    .action(async () => {
+        const { filterType } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'filterType',
+                message: 'Select search type:',
+                choices: [
+                    { name: 'Search by keyword in commit message', value: 'keyword' },
+                    { name: 'By author', value: 'author' },
+                    { name: 'By date range', value: 'date' }
+                ],
+            }
+        ]);
+        let command = 'git log --pretty=oneline';
+        if (filterType === 'keyword') {
+            const { keyword } = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'keyword',
+                    message: 'Enter keyword to search in commit messages:',
+                }
+            ]);
+            command += ` --grep="${keyword}"`;
+        } else if (filterType === 'author') {
+            const { author } = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'author',
+                    message: 'Enter author name or email:',
+                }
+            ]);
+            command += ` --author="${author}"`;
+        } else if (filterType === 'date') {
+            const { since, until } = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'since',
+                    message: 'Enter start date (YYYY-MM-DD):',
+                },
+                {
+                    type: 'input',
+                    name: 'until',
+                    message: 'Enter end date (YYYY-MM-DD):',
+                }
+            ]);
+            command += ` --since="${since}" --until="${until}"`;
+        }
+        try {
+            const history = execSync(command, { encoding: 'utf8' });
+            console.log(chalk.blue("\nCommit History:\n"));
+            console.log(chalk.green(history));
+        } catch (err: any) {
+            console.error(chalk.red("Error retrieving history:"), err.message);
+            process.exit(1);
+        }
     });
 
 program.parse(process.argv);

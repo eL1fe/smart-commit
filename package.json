@@ -1,6 +1,7 @@
 {
   "name": "@el1fe/smart-commit",
-  "version": "1.1.1",
+  "version": "1.1.2",
+  "type": "module",
   "description": "A highly customizable CLI tool for creating Git commits interactively.",
   "repository": "https://github.com/el1fe/smart-commit.git",
   "main": "dist/index.js",
@@ -30,7 +31,9 @@
   "author": "Pavel Piuro <piuro.pavel@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "chalk": "^5.4.1",
     "commander": "^13.1.0",
+    "diff-so-fancy": "^1.4.3",
     "inquirer": "^12.4.2"
   },
   "devDependencies": {
