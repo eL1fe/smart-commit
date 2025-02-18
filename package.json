@@ -1,11 +1,11 @@
 {
-  "name": "@eL1fe/smart-commit",
+  "name": "@el1fe/smart-commit",
   "version": "1.1.0",
   "description": "A highly customizable CLI tool for creating Git commits interactively.",
   "main": "dist/index.js",
   "bin": {
-    "smart-commit": "./dist/index.js",
-    "sc": "./dist/index.js"
+    "smart-commit": "dist/index.js",
+    "sc": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
