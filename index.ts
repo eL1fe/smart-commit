@@ -304,7 +304,7 @@ function showDiffPreview(): void {
 program
     .name('sc')
     .description('Smart Commit CLI Tool - Create customizable Git commits with ease.')
-    .version('1.1.4');
+    .version('1.1.5');
 
 program.addHelpText('beforeAll', chalk.blue(`
 ========================================
