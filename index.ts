@@ -7,6 +7,12 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import chalk from 'chalk';
+import { fileURLToPath } from 'url';
+
+// These variables are required to get the current file's path and directory in ES modules.
+// In CommonJS, these are available globally, but in ES modules we need to construct them.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Question type without using generic Answers<any>.
@@ -263,11 +269,27 @@ async function previewCommitMessage(message: string, lintRules: LintRules): Prom
 }
 
 /**
+ * Checks if the current directory is inside a Git repository.
+ * If the directory is not a Git repository, displays an error message and exits the process.
+ * 
+ * @throws {Error} If the directory is not a Git repository
+ */
+function ensureGitRepo(): void {
+    try {
+        execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
+    } catch {
+        console.log(chalk.red("Not a Git repository. Please run 'git init' or navigate to a valid repo."));
+        process.exit(1);
+    }
+}
+
+/**
  * Shows a preview of the staged diff.
  */
 function showDiffPreview(): void {
     try {
-        const diff = execSync('git diff --staged | npx diff-so-fancy', { encoding: 'utf8' });
+        const diffSoFancyPath = path.join(__dirname, '..', 'node_modules', '.bin', 'diff-so-fancy');
+        const diff = execSync(`git diff --staged | "${diffSoFancyPath}"`, { encoding: 'utf8' });
         if (diff.trim() === "") {
             console.log(chalk.yellow("No staged changes to show."));
         } else {
@@ -516,6 +538,7 @@ program
     .option('--sign', 'Sign commit with GPG', false)
     .option('--no-lint', 'Skip commit message linting', false)
     .action(async (cmdObj: { lint: boolean; sign: any; push: any; }) => {
+        ensureGitRepo();
         const config = loadConfig();
         const suggestedType = suggestCommitType();
         const commitTypeChoices = config.commitTypes.map(ct => ({
@@ -557,7 +580,6 @@ program
                 message: 'Enter commit body (your default editor will open, leave empty to skip):',
             } as EditorQuestion);
         }
-
         if (config.steps.footer) {
             questions.push({
                 type: 'input',
@@ -565,7 +587,6 @@ program
                 message: 'Enter commit footer (optional):',
             } as InputQuestion);
         }
-
         if (config.steps.ticket) {
             questions.push({
                 type: 'input',
@@ -573,7 +594,6 @@ program
                 message: 'Enter ticket ID (optional):',
             } as InputQuestion);
         }
-
         if (config.steps.runCI) {
             questions.push({
                 type: 'confirm',
@@ -582,19 +602,11 @@ program
                 default: false,
             } as ConfirmQuestion);
         }
-
         questions.push({
             type: 'confirm',
             name: 'autoAdd',
             message: 'Stage all changes before commit?',
             default: config.autoAdd,
-        } as ConfirmQuestion);
-
-        questions.push({
-            type: 'confirm',
-            name: 'confirmCommit',
-            message: 'Confirm and execute commit?',
-            default: true,
         } as ConfirmQuestion);
 
         const answers = await inquirer.prompt(questions) as CommitAnswers;
@@ -631,6 +643,14 @@ program
             execSync('git add .', { stdio: 'inherit' });
         }
 
+        const stagedFiles = execSync('git diff --cached --name-only', { encoding: 'utf8' })
+            .split('\n')
+            .filter(f => f.trim() !== '');
+        if (stagedFiles.length === 0) {
+            console.log(chalk.yellow("No changes staged. Aborting commit."));
+            process.exit(0);
+        }
+
         const { diffPreview } = await inquirer.prompt([
             {
                 type: 'confirm',
@@ -640,6 +660,7 @@ program
             }
         ]);
         if (diffPreview) {
+            ensureGitRepo();
             showDiffPreview();
             const { diffConfirm } = await inquirer.prompt([
                 {
@@ -653,11 +674,6 @@ program
                 console.log(chalk.yellow("Commit cancelled due to diff review."));
                 process.exit(0);
             }
-        }
-
-        if (!answers.confirmCommit) {
-            console.log(chalk.yellow('Commit cancelled.'));
-            process.exit(0);
         }
 
         const scopeFormatted = answers.scope.trim() !== '' ? `(${answers.scope.trim()})` : '';
@@ -685,6 +701,18 @@ program
             if (previewChoice) {
                 console.log(chalk.blue("\nPreview commit message:\n"));
                 console.log(commitMsg);
+            }
+            const { finalConfirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'finalConfirm',
+                    message: 'Proceed with commit?',
+                    default: true,
+                }
+            ]);
+            if (!finalConfirm) {
+                console.log(chalk.yellow('Commit cancelled after preview.'));
+                process.exit(0);
             }
         }
 
