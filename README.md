@@ -38,6 +38,10 @@ Run the command:
 ```bash
 sc commit [--push] [--sign]
 ```
+or
+```bash
+sc c [--push] [--sign]
+```
 
 You will be prompted for:
 - **Commit Type:** Choose from the list. The tool may automatically suggest a type based on staged changes.
