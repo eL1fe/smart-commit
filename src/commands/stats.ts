@@ -35,7 +35,7 @@ export function registerStatsCommand(program: Command): void {
             ]);
             try {
                 if (statsType === 'shortlog') {
-                    execSync(`git shortlog -s -n --since="${period}"`, { stdio: 'inherit' });
+                    execSync(`git --no-pager shortlog -s -n --since="${period}"`, { stdio: 'inherit' });
                 } else if (statsType === 'activity') {
                     const datesOutput = execSync(`git log --since="${period}" --pretty=format:"%ad" --date=short`, { encoding: 'utf8' });
                     const dates = datesOutput.split('\n').filter(Boolean);
