@@ -95,6 +95,7 @@ Smart Commit is a highly customizable CLI utility for creating Git commits inter
 
 - **sc config (or sc cfg)**
   - View and update Smart Commit settings.
+  - Reset Configuration
   - Configure options such as:
     - Auto-add (automatically stage changes)
     - Emoji usage in commit type prompts
@@ -108,6 +109,7 @@ Smart Commit is a highly customizable CLI utility for creating Git commits inter
     - Enable auto-add: `sc config --auto-add true`
     - Set CI command: `sc config --ci-command "npm test"`
     - View current configuration: `sc config`
+    - Reset configuration to default: `sc config --reset`
 
 - **sc setup**
   - Launches an interactive setup wizard to configure your Smart Commit preferences step by step.

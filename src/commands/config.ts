@@ -1,12 +1,13 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { saveConfig, loadConfig } from '../utils';
+import { saveConfig, loadConfig, defaultConfig } from '../utils';
 
 export function registerConfigCommand(program: Command): void {
     program
         .command('config')
         .alias('cfg')
         .description('Configure or view Smart Commit settings')
+        .option('--reset', 'Reset configuration to default settings')
         .option('-a, --auto-add <bool>', 'Set auto-add for commits (true/false)', (value: string) => value === 'true')
         .option('-e, --use-emoji <bool>', 'Use emojis in commit types (true/false)', (value: string) => value === 'true')
         .option('-c, --ci-command <command>', 'Set CI command (e.g., "npm test")')
@@ -23,6 +24,12 @@ export function registerConfigCommand(program: Command): void {
         .option('--branch-type <json>', 'Set branch types (JSON string)')
         .option('--branch-placeholder <json>', 'Set branch placeholder config (JSON string)')
         .action((options) => {
+            if (options.reset) {
+                saveConfig(defaultConfig);
+                console.log(chalk.green("Configuration has been reset to default settings."));
+                return;
+            }
+
             const config = loadConfig();
             let changed = false;
 
@@ -126,7 +133,7 @@ export function registerConfigCommand(program: Command): void {
             if (changed) {
                 saveConfig(config);
             } else {
-                console.log(chalk.blue("\nCurrent configuration:\n"));
+                console.log(chalk.blue("Current configuration:"));
 
                 console.table([
                     { Key: 'autoAdd', Value: config.autoAdd },

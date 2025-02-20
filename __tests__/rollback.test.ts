@@ -21,24 +21,43 @@ describe('registerRollbackCommand', () => {
     exitSpy = jest.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`process.exit: ${code}`);
     });
-    execSyncSpy = jest.spyOn(require('child_process'), 'execSync').mockImplementation(() => {});
-    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    execSyncSpy = jest.spyOn(require('child_process'), 'execSync').mockImplementation(() => { });
+    consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
+    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  test('performs soft reset successfully when confirmed', async () => {
+  test('performs soft reset with default target (HEAD~1) when user does not choose specific commit and confirms', async () => {
     (inquirer.prompt as unknown as jest.Mock)
       .mockResolvedValueOnce({ resetType: 'soft' })
+      .mockResolvedValueOnce({ chooseSpecific: false })
       .mockResolvedValueOnce({ confirmRollback: true });
 
     await program.parseAsync(['rollback'], { from: 'user' });
 
     expect(ensureGitRepo).toHaveBeenCalled();
     expect(execSyncSpy).toHaveBeenCalledWith('git reset --soft HEAD~1', { stdio: 'inherit' });
+    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Rollback successful!"));
+  });
+
+  test('performs soft reset with chosen commit when user opts to choose specific commit', async () => {
+    const fakeLog = 'abc123 Commit message one\ndef456 Commit message two\n';
+    (inquirer.prompt as unknown as jest.Mock)
+      .mockResolvedValueOnce({ resetType: 'soft' })
+      .mockResolvedValueOnce({ chooseSpecific: true })
+      .mockResolvedValueOnce({ selectedCommit: 'def456' })
+      .mockResolvedValueOnce({ confirmRollback: true });
+
+    execSyncSpy.mockImplementationOnce(() => fakeLog);
+
+    await program.parseAsync(['rollback'], { from: 'user' });
+
+    expect(ensureGitRepo).toHaveBeenCalled();
+    expect(execSyncSpy).toHaveBeenCalledWith('git log --oneline -n 10', { encoding: 'utf8' });
+    expect(execSyncSpy).toHaveBeenCalledWith('git reset --soft def456', { stdio: 'inherit' });
     expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Rollback successful!"));
   });
 
@@ -57,6 +76,7 @@ describe('registerRollbackCommand', () => {
   test('cancels rollback when confirmation is false', async () => {
     (inquirer.prompt as unknown as jest.Mock)
       .mockResolvedValueOnce({ resetType: 'soft' })
+      .mockResolvedValueOnce({ chooseSpecific: false })
       .mockResolvedValueOnce({ confirmRollback: false });
 
     await expect(program.parseAsync(['rollback'], { from: 'user' }))
@@ -69,6 +89,7 @@ describe('registerRollbackCommand', () => {
   test('exits with error if execSync throws an error during soft reset', async () => {
     (inquirer.prompt as unknown as jest.Mock)
       .mockResolvedValueOnce({ resetType: 'soft' })
+      .mockResolvedValueOnce({ chooseSpecific: false })
       .mockResolvedValueOnce({ confirmRollback: true });
 
     const errorMessage = 'Simulated soft reset error';

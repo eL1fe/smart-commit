@@ -7,7 +7,7 @@ import chalk from 'chalk';
 import { registerSetupCommand } from './commands/setup';
 import { registerConfigCommand } from './commands/config';
 import { registerCommitCommand } from './commands/commit';
-import { registerAmendCommand } from './commands/ammend';
+import { registerAmendCommand } from './commands/amend';
 import { registerRollbackCommand } from './commands/rollback';
 import { registerBranchCommand } from './commands/branch';
 import { registerRebaseHelperCommand } from './commands/rebaseHelper';

@@ -7,7 +7,7 @@ import { ensureGitRepo } from '../utils';
 export function registerRollbackCommand(program: Command): void {
     program
         .command('rollback')
-        .description('Rollback the last commit while choosing between soft and hard reset')
+        .description('Rollback a commit with options. Soft reset keeps changes staged.')
         .action(async () => {
             ensureGitRepo();
             const { resetType } = await inquirer.prompt([
@@ -21,11 +21,50 @@ export function registerRollbackCommand(program: Command): void {
                     ],
                 }
             ]);
+
+            let targetCommit = 'HEAD~1';
+            if (resetType === 'soft') {
+                const { chooseSpecific } = await inquirer.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'chooseSpecific',
+                        message: 'Would you like to choose a specific commit for rollback? (Soft reset keeps changes staged)',
+                        default: false,
+                    }
+                ]);
+                if (chooseSpecific) {
+                    let commitLog = '';
+                    try {
+                        commitLog = execSync('git log --oneline -n 10', { encoding: 'utf8' });
+                    } catch (err: any) {
+                        console.error(chalk.red("Error retrieving commit log:"), err.message);
+                        process.exit(1);
+                    }
+                    const commits = commitLog.split('\n').filter(line => line.trim() !== '');
+                    const commitChoices = commits.map(line => {
+                        const tokens = line.split(' ');
+                        const hash = tokens[0];
+                        return { name: line, value: hash };
+                    });
+                    const { selectedCommit } = await inquirer.prompt([
+                        {
+                            type: 'list',
+                            name: 'selectedCommit',
+                            message: 'Select the commit to rollback to:',
+                            choices: commitChoices,
+                        }
+                    ]);
+                    targetCommit = selectedCommit;
+                } else {
+                    console.log(chalk.yellow("Soft reset selected. Changes will remain staged."));
+                }
+            }
+
             const { confirmRollback } = await inquirer.prompt([
                 {
                     type: 'confirm',
                     name: 'confirmRollback',
-                    message: `This will perform a ${resetType} reset on the last commit. Continue?`,
+                    message: `This will perform a ${resetType} reset to ${targetCommit}. Continue?`,
                     default: false,
                 }
             ]);
@@ -35,7 +74,7 @@ export function registerRollbackCommand(program: Command): void {
             }
             try {
                 if (resetType === 'soft') {
-                    execSync('git reset --soft HEAD~1', { stdio: 'inherit' });
+                    execSync(`git reset --soft ${targetCommit}`, { stdio: 'inherit' });
                 } else {
                     execSync('git reset --hard HEAD~1', { stdio: 'inherit' });
                 }

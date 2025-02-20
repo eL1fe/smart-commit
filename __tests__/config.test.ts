@@ -1,10 +1,32 @@
 import { Command } from 'commander';
 import { registerConfigCommand } from '../src/commands/config';
-import { loadConfig, saveConfig } from '../src/utils';
+import { defaultConfig, loadConfig, saveConfig } from '../src/utils';
 
 jest.mock('../src/utils', () => ({
     loadConfig: jest.fn(),
-    saveConfig: jest.fn()
+    saveConfig: jest.fn(),
+    defaultConfig: {
+        autoAdd: false,
+        useEmoji: true,
+        ciCommand: "",
+        templates: { defaultTemplate: "[{type}]{ticketSeparator}{ticket}: {summary}" },
+        steps: { scope: false, body: false, footer: false, ticket: false, runCI: false },
+        ticketRegex: "",
+        enableLint: false,
+        lintRules: { summaryMaxLength: 72, typeCase: "lowercase", requiredTicket: false },
+        commitTypes: [
+            { emoji: "✨", value: "feat", description: "A new feature" },
+            { emoji: "🐛", value: "fix", description: "A bug fix" }
+        ],
+        branch: {
+            template: "{type}/{ticketId}-{shortDesc}",
+            types: [
+                { value: "feature", description: "New feature" },
+                { value: "fix", description: "Bug fix" }
+            ],
+            placeholders: { ticketId: { lowercase: false } }
+        }
+    },
 }));
 
 jest.mock('chalk', () => ({
@@ -13,6 +35,31 @@ jest.mock('chalk', () => ({
     red: jest.fn((str) => str),
     green: jest.fn((str) => str),
 }));
+
+describe('registerConfigCommand with --reset', () => {
+    let program: Command;
+    let saveConfigMock: jest.Mock;
+    let consoleLogSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+        program = new Command();
+        registerConfigCommand(program);
+        saveConfigMock = saveConfig as jest.Mock;
+        saveConfigMock.mockReset();
+        consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => { });
+    });
+
+    afterEach(() => {
+        consoleLogSpy.mockRestore();
+        jest.resetAllMocks();
+    });
+
+    it('should reset configuration to default when --reset is passed', async () => {
+        await program.parseAsync(['node', 'test', 'config', '--reset']);
+        expect(saveConfigMock).toHaveBeenCalledWith(defaultConfig);
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Configuration has been reset to default settings."));
+    });
+});
 
 describe('registerConfigCommand', () => {
     let program: Command;
@@ -76,11 +123,14 @@ describe('registerConfigCommand', () => {
     });
 
     it('prints current config if no flags are passed', async () => {
+        const tableSpy = jest.spyOn(console, 'table').mockImplementation(() => { });
         await program.parseAsync(['node', 'test', 'config']);
 
         expect(saveConfig).not.toHaveBeenCalled();
-
-        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining("Current configuration:"));
+        expect(tableSpy).toHaveBeenCalledWith(expect.arrayContaining([
+            expect.objectContaining({ Key: 'autoAdd', Value: false })
+        ]));
+        tableSpy.mockRestore();
     });
 
     it('updates autoAdd when passing --auto-add true', async () => {

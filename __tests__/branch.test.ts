@@ -72,7 +72,8 @@ describe('registerBranchCommand', () => {
                 types: [
                     { value: 'feat', description: 'Feature' },
                     { value: 'fix', description: 'Bug fix' }
-                ]
+                ],
+                placeholders: {}
             }
         });
     });
@@ -142,5 +143,42 @@ describe('registerBranchCommand', () => {
         const branchCommandCall = calls.find(call => call[0].includes('git checkout -b'));
         // new-branch-XXXX
         expect(branchCommandCall[0]).toMatch(/new-branch-\d+/);
+    });
+
+    it('should switch back to the base branch when user opts not to stay on the new branch', async () => {
+        (inquirer.prompt as unknown as jest.Mock)
+            .mockResolvedValueOnce({ baseBranchChoice: 'main' })
+            .mockResolvedValueOnce({ type: 'feat' })
+            .mockResolvedValueOnce({ ticketId: '123' })
+            .mockResolvedValueOnce({ shortDesc: 'add feature' })
+            .mockResolvedValueOnce({ stayOnBranch: false });
+
+        registerBranchCommand(program);
+        await program.parseAsync(['node', 'test', 'branch']);
+
+        const calls = (execSync as jest.Mock).mock.calls;
+        const switchBackCall = calls.find(call => call[0].includes('git checkout "') && !call[0].includes('-b'));
+        expect(switchBackCall).toBeTruthy();
+        expect(switchBackCall[0]).toMatch(/git checkout "main"/);
+    });
+
+    it('should handle empty manual input for base branch and not attempt to switch back if base branch is empty', async () => {
+        (inquirer.prompt as unknown as jest.Mock)
+            .mockResolvedValueOnce({ baseBranchChoice: 'Manual input...' })
+            .mockResolvedValueOnce({ manualBranch: '    ' })
+            .mockResolvedValueOnce({ type: 'fix' })
+            .mockResolvedValueOnce({ ticketId: '456' })
+            .mockResolvedValueOnce({ shortDesc: 'fix bug' })
+            .mockResolvedValueOnce({ stayOnBranch: false });
+
+        registerBranchCommand(program);
+        await program.parseAsync(['node', 'test', 'branch']);
+
+        const calls = (execSync as jest.Mock).mock.calls;
+        const branchCommandCall = calls.find(call => call[0].includes('git checkout -b'));
+        expect(branchCommandCall[0]).toMatch(/^git checkout -b "[^"]+"$/);
+
+        const switchBackCall = calls.find(call => call[0].startsWith('git checkout "') && !call[0].includes('-b'));
+        expect(switchBackCall).toBeUndefined();
     });
 });

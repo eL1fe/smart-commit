@@ -39,15 +39,19 @@ export function registerStatsCommand(program: Command): void {
                 } else if (statsType === 'activity') {
                     const datesOutput = execSync(`git log --since="${period}" --pretty=format:"%ad" --date=short`, { encoding: 'utf8' });
                     const dates = datesOutput.split('\n').filter(Boolean);
-                    const counts: { [date: string]: number } = {};
-                    dates.forEach(date => { counts[date] = (counts[date] || 0) + 1; });
-                    const sortedDates = Object.keys(counts).sort();
-                    console.log(chalk.blue("\nCommit Activity:"));
-                    sortedDates.forEach(date => {
-                        const count = counts[date];
-                        const bar = "#".repeat(count);
-                        console.log(chalk.green(`${date}: ${bar} (${count})`));
-                    });
+                    if (dates.length === 0) {
+                        console.log(chalk.yellow("No commits found for the selected period."));
+                    } else {
+                        const counts: { [date: string]: number } = {};
+                        dates.forEach(date => { counts[date] = (counts[date] || 0) + 1; });
+                        const sortedDates = Object.keys(counts).sort();
+                        console.log(chalk.blue("\nCommit Activity:"));
+                        sortedDates.forEach(date => {
+                            const count = counts[date];
+                            const bar = "#".repeat(count);
+                            console.log(chalk.green(`${date}: ${bar} (${count})`));
+                        });
+                    }
                 }
             } catch (err: any) {
                 console.error(chalk.red("Error retrieving statistics:"), err.message);

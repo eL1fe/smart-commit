@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { registerAmendCommand } from '../src/commands/ammend';
+import { registerAmendCommand } from '../src/commands/amend';
 import { loadConfig, ensureGitRepo, lintCommitMessage } from '../src/utils';
 import inquirer from 'inquirer';
 import { execSync } from 'child_process';
@@ -67,7 +67,7 @@ describe('registerAmendCommand', () => {
         expect(execSync).toHaveBeenCalledTimes(1);
     });
 
-    it('should amend normally if user confirms and without lint', async () => {
+    it('should amend normally if user confirms and lint is disabled', async () => {
         (ensureGitRepo as jest.Mock).mockImplementation(() => { });
         (loadConfig as jest.Mock).mockReturnValue({
             enableLint: false,
@@ -86,10 +86,9 @@ describe('registerAmendCommand', () => {
         expect(amendCall[0]).toMatch(/New commit message/);
 
         expect(lintCommitMessage).not.toHaveBeenCalled();
-
     });
 
-    it('should perform lint if enableLint = true and abort amend on errors', async () => {
+    it('should abort amend if lint errors persist and user chooses not to re-edit', async () => {
         (ensureGitRepo as jest.Mock).mockImplementation(() => { });
         (loadConfig as jest.Mock).mockReturnValue({
             enableLint: true,
@@ -99,7 +98,8 @@ describe('registerAmendCommand', () => {
 
         (inquirer.prompt as unknown as jest.Mock)
             .mockResolvedValueOnce({ amendConfirm: true })
-            .mockResolvedValueOnce({ newMessage: 'bad commit message' });
+            .mockResolvedValueOnce({ newMessage: 'bad commit message' })
+            .mockResolvedValueOnce({ retry: false });
 
         (lintCommitMessage as jest.Mock).mockReturnValue(['Error: summary too long']);
 
@@ -109,10 +109,11 @@ describe('registerAmendCommand', () => {
 
         expect(execSync).toHaveBeenCalledTimes(1);
         const calls = (execSync as jest.Mock).mock.calls;
-        expect(calls.some(call => call[0].includes('git commit --amend'))).toBe(false);
+        const amendCall = calls.find(call => call[0].includes('git commit --amend'));
+        expect(amendCall).toBeUndefined();
     });
 
-    it('should perform lint and amend normally if no errors', async () => {
+    it('should allow re-edit after lint errors and amend successfully', async () => {
         (ensureGitRepo as jest.Mock).mockImplementation(() => { });
         (loadConfig as jest.Mock).mockReturnValue({
             enableLint: true,
@@ -122,16 +123,20 @@ describe('registerAmendCommand', () => {
 
         (inquirer.prompt as unknown as jest.Mock)
             .mockResolvedValueOnce({ amendConfirm: true })
+            .mockResolvedValueOnce({ newMessage: 'bad commit message' })
+            .mockResolvedValueOnce({ retry: true })
             .mockResolvedValueOnce({ newMessage: 'good commit message' });
 
-        (lintCommitMessage as jest.Mock).mockReturnValue([]);
+        (lintCommitMessage as jest.Mock)
+            .mockReturnValueOnce(['Error: summary too long'])
+            .mockReturnValueOnce([]);
 
         await program.parseAsync(['node', 'test', 'amend']);
 
-        expect(execSync).toHaveBeenCalledTimes(2);
         const calls = (execSync as jest.Mock).mock.calls;
         const amendCall = calls.find(call => call[0].includes('git commit --amend'));
-        expect(amendCall[0]).toMatch(/"good commit message"/);
+        expect(amendCall).toBeTruthy();
+        expect(amendCall[0]).toMatch(/good commit message/);
     });
 
     it('should catch execSync errors and exit with code 1', async () => {

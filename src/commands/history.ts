@@ -32,11 +32,11 @@ export function registerHistoryCommand(program: Command): void {
                 }
             ]);
 
-            let command = 'git log --pretty=oneline';
-            
+            let baseCommand = 'git log --pretty=oneline';
+
             if (viewMode === 'current') {
                 const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
-                command = `git log --pretty=oneline ${currentBranch} --not $(git for-each-ref --format='%(refname)' refs/heads/ | grep -v "refs/heads/${currentBranch}")`;
+                baseCommand = `git log --pretty=oneline ${currentBranch} --not $(git for-each-ref --format='%(refname)' refs/heads/ | grep -v "refs/heads/${currentBranch}")`;
             }
 
             if (filterType === 'keyword') {
@@ -47,7 +47,7 @@ export function registerHistoryCommand(program: Command): void {
                         message: 'Enter keyword to search in commit messages:',
                     }
                 ]);
-                command += ` --grep="${keyword}"`;
+                baseCommand += ` --grep="${keyword}"`;
             } else if (filterType === 'author') {
                 const { author } = await inquirer.prompt([
                     {
@@ -56,29 +56,72 @@ export function registerHistoryCommand(program: Command): void {
                         message: 'Enter author name or email:',
                     }
                 ]);
-                command += ` --author="${author}"`;
+                baseCommand += ` --author="${author}"`;
             } else if (filterType === 'date') {
                 const { since, until } = await inquirer.prompt([
                     {
                         type: 'input',
                         name: 'since',
                         message: 'Enter start date (YYYY-MM-DD):',
+                        validate: (input: string) => /^\d{4}-\d{2}-\d{2}$/.test(input)
+                            ? true
+                            : 'Please enter date in YYYY-MM-DD format',
                     },
                     {
                         type: 'input',
                         name: 'until',
                         message: 'Enter end date (YYYY-MM-DD):',
+                        validate: (input: string) => /^\d{4}-\d{2}-\d{2}$/.test(input)
+                            ? true
+                            : 'Please enter date in YYYY-MM-DD format',
                     }
                 ]);
-                command += ` --since="${since}" --until="${until}"`;
+                baseCommand += ` --since="${since}" --until="${until}"`;
             }
-            try {
-                const history = execSync(command, { encoding: 'utf8' });
+
+            const { limit } = await inquirer.prompt([
+                {
+                    type: 'input',
+                    name: 'limit',
+                    message: 'Enter number of commits per page (default 20):',
+                    default: '20',
+                    validate: (input: string) =>
+                        /^\d+$/.test(input) && parseInt(input, 10) > 0
+                            ? true
+                            : 'Please enter a positive integer',
+                }
+            ]);
+            const perPage = parseInt(limit, 10);
+
+            let skip = 0;
+            while (true) {
+                const paginatedCommand = `${baseCommand} --max-count=${perPage} --skip=${skip}`;
+                let historyOutput = '';
+                try {
+                    historyOutput = execSync(paginatedCommand, { encoding: 'utf8' });
+                } catch (err: any) {
+                    console.error(chalk.red("Error retrieving history:"), err.message);
+                    process.exit(1);
+                }
+                if (!historyOutput.trim()) {
+                    console.log(chalk.yellow("No more commits to display."));
+                    break;
+                }
                 console.log(chalk.blue("\nCommit History:\n"));
-                console.log(chalk.green(history));
-            } catch (err: any) {
-                console.error(chalk.red("Error retrieving history:"), err.message);
-                process.exit(1);
+                console.log(chalk.green(historyOutput));
+
+                const { showMore } = await inquirer.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'showMore',
+                        message: 'Show next page?',
+                        default: true,
+                    }
+                ]);
+                if (!showMore) {
+                    break;
+                }
+                skip += perPage;
             }
         });
 }
