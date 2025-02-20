@@ -314,4 +314,101 @@ describe('registerCommitCommand', () => {
         expect(commitCall).toBeTruthy();
         expect(commitCall[0]).toMatch(/some chore/);
     });
+
+    it('should extract ticket from branch name if config.ticket is enabled and ticket is empty', async () => {
+        (ensureGitRepo as jest.Mock).mockImplementation(() => {});
+        (loadConfig as jest.Mock).mockReturnValue({
+            autoAdd: false,
+            commitTypes: [{ emoji: '✨', value: 'feat', description: 'feature' }],
+            useEmoji: true,
+            steps: { ticket: true },
+            templates: { defaultTemplate: '[{ticket}]{ticketSeparator}[{type}]: {summary}' },
+            ticketRegex: 'ABC-\\d+',
+            enableLint: false
+        });
+        (getUnstagedFiles as jest.Mock).mockReturnValue(['file1.js']);
+        (loadGitignorePatterns as jest.Mock).mockReturnValue([]);
+        (micromatch.isMatch as jest.Mock).mockReturnValue(false);
+        
+        const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        
+        (inquirer.prompt as unknown as jest.Mock)
+            .mockResolvedValueOnce({ files: ['file1.js'] })
+            .mockResolvedValueOnce({ type: 'feat', summary: 'added feature', pushCommit: false })
+            .mockResolvedValueOnce({ ticket: '' })
+            .mockResolvedValueOnce({ diffPreview: false })
+            .mockResolvedValueOnce({ previewChoice: false })
+            .mockResolvedValueOnce({ finalConfirm: true });
+        
+        (execSync as jest.Mock).mockImplementation((cmd: string, options: any) => {
+            if (cmd.startsWith('git diff --cached')) {
+                return 'file1.js\n';
+        }
+        if (cmd.startsWith('git rev-parse --abbrev-ref HEAD')) {
+            return 'ABC-123-feature';
+        }
+        return 'file1.js\n';
+        });
+        
+        await program.parseAsync(['commit'], { from: 'user' });
+        
+        expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Extracted ticket from branch: ABC-123'));
+        consoleLogSpy.mockRestore();
+    });
+
+    it('should commit if diff preview is shown and confirmed', async () => {
+        (ensureGitRepo as jest.Mock).mockImplementation(() => {});
+        (loadConfig as jest.Mock).mockReturnValue({
+            autoAdd: false,
+            commitTypes: [{ value: 'fix' }],
+            useEmoji: false,
+            steps: {},
+            templates: { defaultTemplate: '[{type}]: {summary}' },
+            enableLint: false
+        });
+        (getUnstagedFiles as jest.Mock).mockReturnValue(['update.js']);
+        (loadGitignorePatterns as jest.Mock).mockReturnValue([]);
+        (micromatch.isMatch as jest.Mock).mockReturnValue(false);
+        (inquirer.prompt as unknown as jest.Mock)
+            .mockResolvedValueOnce({ files: ['update.js'] })
+            .mockResolvedValueOnce({ type: 'fix', scope: '', summary: 'bug fix', pushCommit: false })
+            .mockResolvedValueOnce({ diffPreview: true })
+            .mockResolvedValueOnce({ diffConfirm: true })
+            .mockResolvedValueOnce({ previewChoice: false })
+            .mockResolvedValueOnce({ finalConfirm: true });
+        (execSync as jest.Mock)
+            .mockReturnValueOnce('update.js\n')
+            .mockReturnValueOnce('update.js\n');
+        (showDiffPreview as jest.Mock).mockImplementation(() => {});
+        await program.parseAsync(['commit'], { from: 'user' });
+        const commitCall = (execSync as jest.Mock).mock.calls.find(call => call[0].includes('git commit'));
+        expect(commitCall).toBeTruthy();
+    });
+
+    it('should abort commit if no staged changes remain after diff preview', async () => {
+        (ensureGitRepo as jest.Mock).mockImplementation(() => {});
+        (loadConfig as jest.Mock).mockReturnValue({
+            autoAdd: false,
+            commitTypes: [{ value: 'chore' }],
+            useEmoji: false,
+            steps: {},
+            templates: { defaultTemplate: '[{type}]: {summary}' },
+            enableLint: false
+        });
+        (getUnstagedFiles as jest.Mock).mockReturnValue(['script.js']);
+        (loadGitignorePatterns as jest.Mock).mockReturnValue([]);
+        (micromatch.isMatch as jest.Mock).mockReturnValue(false);
+        (inquirer.prompt as unknown as jest.Mock)
+            .mockResolvedValueOnce({ files: ['script.js'] })
+            .mockResolvedValueOnce({ type: 'chore', scope: '', summary: 'cleanup', pushCommit: false })
+            .mockResolvedValueOnce({ diffPreview: true })
+            .mockResolvedValueOnce({ diffConfirm: false });
+        (execSync as jest.Mock)
+            .mockReturnValueOnce('script.js\n')
+            .mockReturnValueOnce(''); 
+        (showDiffPreview as jest.Mock).mockImplementation(() => {});
+        await expect(program.parseAsync(['commit'], { from: 'user' })).resolves.not.toThrow();
+        const commitCall = (execSync as jest.Mock).mock.calls.find(call => call[0].includes('git commit'));
+        expect(commitCall).toBeUndefined();
+    });
 });

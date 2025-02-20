@@ -48,7 +48,6 @@ export function registerRebaseHelperCommand(program: Command): void {
             console.log(chalk.yellow("5. Type ':wq' and press Enter to save and exit."));
             console.log(chalk.yellow("6. If you make a mistake, use ':q!' to quit without saving.\n"));
 
-            // Ожидание подтверждения перед запуском rebase
             const { confirm } = await inquirer.prompt([
                 {
                     type: 'confirm',

@@ -119,11 +119,27 @@ export function registerCommitCommand(program: Command): void {
                     message: 'Enter commit footer (optional):',
                 } as InputQuestion);
             }
+            
+            let defaultTicket = "";
+            if (config.steps.ticket && config.ticketRegex) {
+                try {
+                    const branchName = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8" }).trim();
+                    const re = new RegExp(config.ticketRegex);
+                    const match = branchName.match(re);
+                    if (match && match[0]) {
+                        defaultTicket = match[0];
+                        console.log(chalk.cyan(`Extracted ticket from branch: ${defaultTicket}`));
+                    }
+                } catch {
+                    defaultTicket = "";
+                }
+            }
             if (config.steps.ticket) {
                 questions.push({
                     type: 'input',
                     name: 'ticket',
                     message: 'Enter ticket ID (optional):',
+                    default: defaultTicket,
                 } as InputQuestion);
             }
             if (config.steps.runCI) {
@@ -152,19 +168,6 @@ export function registerCommitCommand(program: Command): void {
             if (!answers.footer) answers.footer = "";
             if (!answers.ticket) answers.ticket = "";
             if (!answers.runCI) answers.runCI = false;
-
-            if (config.steps.ticket && !answers.ticket && config.ticketRegex) {
-                try {
-                    const branchName = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf8" }).trim();
-                    const re = new RegExp(config.ticketRegex);
-                    const match = branchName.match(re);
-                    if (match && match[0]) {
-                        answers.ticket = match[0];
-                        console.log(chalk.cyan(`Extracted ticket from branch: ${answers.ticket}`));
-                    }
-                } catch { }
-            }
-
             if (answers.runCI) {
                 try {
                     console.log(chalk.blue('Running CI tests...'));

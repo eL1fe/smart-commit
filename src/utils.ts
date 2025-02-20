@@ -166,9 +166,71 @@ export function suggestCommitType(): string | null {
         const diffFiles = execSync('git diff --cached --name-only', { encoding: 'utf8' })
             .split('\n')
             .filter(f => f.trim() !== '');
+        
         if (diffFiles.length > 0) {
             if (diffFiles.every(f => f.endsWith('.md'))) return 'docs';
-            if (diffFiles.includes('package.json')) return 'chore';
+            
+            const configFiles = [
+                'package.json', 
+                'tsconfig.json', 
+                '.eslintrc', 
+                '.prettierrc', 
+                'babel.config.js', 
+                'webpack.config.js',
+                'vite.config.ts',
+                '.env',
+                'docker-compose.yml',
+                'Dockerfile'
+            ];
+            if (diffFiles.some(f => configFiles.includes(f))) return 'chore';
+
+            if (diffFiles.some(f => 
+                f.includes('__tests__') || 
+                f.endsWith('.test.ts') || 
+                f.endsWith('.spec.ts')
+            )) return 'test';
+
+            const sourcePatterns = [
+                'src/components/',
+                'src/hooks/',
+                'src/utils/',
+                'src/services/',
+                'src/context/',
+                'src/types/',
+                'src/styles/'
+            ];
+
+            if (diffFiles.some(f => sourcePatterns.some(pattern => f.includes(pattern)))) {
+                if (diffFiles.some(f => f.includes('styles/') || f.endsWith('.css') || f.endsWith('.scss'))) return 'style';
+                if (diffFiles.some(f => f.includes('types/') || f.endsWith('.d.ts'))) return 'refactor';
+                return 'feat';
+            }
+
+            if (diffFiles.some(f => 
+                f.includes('perf/') || 
+                f.includes('performance/') || 
+                f.includes('optimization/')
+            )) return 'perf';
+
+            if (diffFiles.some(f => 
+                f.includes('security/') || 
+                f.endsWith('.lock') || 
+                f.includes('vulnerability')
+            )) return 'security';
+
+            if (diffFiles.some(f => 
+                f.includes('.github/workflows/') || 
+                f.includes('ci/') || 
+                f.includes('cd/') || 
+                f === '.gitlab-ci.yml'
+            )) return 'ci';
+
+            if (diffFiles.some(f => 
+                f === 'package-lock.json' || 
+                f === 'yarn.lock' || 
+                f === 'pnpm-lock.yaml'
+            )) return 'build';
+
             if (diffFiles.some(f => f.startsWith('src/'))) return 'feat';
         }
     } catch { }
@@ -192,44 +254,64 @@ export function lintCommitMessage(message: string, rules: LintRules): string[] {
 }
 
 export async function previewCommitMessage(message: string, lintRules: LintRules): Promise<string> {
+  let currentMessage = message;
+
+  while (true) {
     console.log(chalk.blue("\nPreview commit message:\n"));
-    console.log(message);
+    console.log(currentMessage);
+
     const { confirmPreview } = await inquirer.prompt([
-        {
-            type: 'confirm',
-            name: 'confirmPreview',
-            message: 'Does the commit message look OK?',
-            default: true,
-        }
+      { 
+        type: 'confirm', 
+        name: 'confirmPreview', 
+        message: 'Does the commit message look OK?', 
+        default: true 
+      }
     ]);
-    if (confirmPreview) {
-        const errors = lintCommitMessage(message, lintRules);
-        if (errors.length > 0) {
-            console.log(chalk.red("Linting errors:"));
-            errors.forEach(err => console.log(chalk.red("- " + err)));
-            const { editedMessage } = await inquirer.prompt([
-                {
-                    type: 'editor',
-                    name: 'editedMessage',
-                    message: 'Edit the commit message to fix these issues:',
-                    default: message,
-                }
-            ]);
-            return previewCommitMessage(editedMessage, lintRules);
-        } else {
-            return message;
+
+    if (!confirmPreview) {
+      const response = await inquirer.prompt([
+        { 
+          type: 'editor', 
+          name: 'editedMessage', 
+          message: 'Edit the commit message as needed:', 
+          default: currentMessage 
         }
-    } else {
-        const { editedMessage } = await inquirer.prompt([
-            {
-                type: 'editor',
-                name: 'editedMessage',
-                message: 'Edit the commit message as needed:',
-                default: message,
-            }
-        ]);
-        return previewCommitMessage(editedMessage, lintRules);
+      ]);
+      currentMessage = response.editedMessage || currentMessage;
     }
+
+    const errors = lintCommitMessage(currentMessage, lintRules);
+    
+    if (errors.length === 0) {
+      return currentMessage;
+    }
+
+    console.log(chalk.red("Linting errors:"));
+    errors.forEach(err => console.log(chalk.red("- " + err)));
+
+    const response = await inquirer.prompt([
+      { 
+        type: 'confirm', 
+        name: 'continueEditing', 
+        message: 'Do you want to continue editing?', 
+        default: true 
+      },
+      { 
+        type: 'editor', 
+        name: 'editedMessage', 
+        message: 'Edit the commit message to fix these issues:', 
+        default: currentMessage,
+        when: (answers) => answers.continueEditing
+      }
+    ]);
+
+    if (!response.continueEditing) {
+      throw new Error("Commit message editing cancelled");
+    }
+
+    currentMessage = response.editedMessage;
+  }
 }
 
 export function ensureGitRepo(): void {
