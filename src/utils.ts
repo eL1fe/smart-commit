@@ -20,13 +20,14 @@ export const defaultConfig: Config = {
         { emoji: "♻️", value: "refactor", description: "Code refactoring" },
         { emoji: "🚀", value: "perf", description: "Performance improvements" },
         { emoji: "✅", value: "test", description: "Adding tests" },
-        { emoji: "🔧", value: "chore", description: "Maintenance and chores" }
+        { emoji: "🔧", value: "chore", description: "Maintenance and chores" },
+        { emoji: "🚧", value: "wip", description: "Work in progress" }
     ],
     autoAdd: false,
     useEmoji: true,
     ciCommand: "",
     templates: {
-        defaultTemplate: "[{type}]{ticketSeparator}{ticket}: {summary}\n\nBody:\n{body}\n\nFooter:\n{footer}"
+        defaultTemplate: "[{type}]{ticketSeparator}{ticket}: {summary}"
     },
     steps: {
         scope: false,
