@@ -214,7 +214,9 @@ When creating branch names, each placeholder can be sanitized using custom optio
 
 Install Smart Commit globally using npm:
 
+```bash
 npm install -g @el1fe/smart-commit
+```
 
 After installation, the commands `smart-commit` and `sc` will be available in your terminal.
 
