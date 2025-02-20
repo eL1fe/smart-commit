@@ -58,7 +58,7 @@ describe('registerStatsCommand', () => {
 
     expect(ensureGitRepo).toHaveBeenCalled();
 
-    expect(execSyncMock).toHaveBeenCalledWith('git shortlog -s -n --since="1 week ago"', { stdio: 'inherit' });
+    expect(execSyncMock).toHaveBeenCalledWith('git --no-pager shortlog -s -n --since="1 week ago"', { stdio: 'inherit' });
   });
 
   it('should show activity statistics for selected period', async () => {

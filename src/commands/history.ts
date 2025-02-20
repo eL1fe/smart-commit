@@ -10,7 +10,7 @@ export function registerHistoryCommand(program: Command): void {
         .description('Show commit history with search options')
         .action(async () => {
             ensureGitRepo();
-            const { filterType } = await inquirer.prompt([
+            const { filterType, viewMode } = await inquirer.prompt([
                 {
                     type: 'list',
                     name: 'filterType',
@@ -20,9 +20,25 @@ export function registerHistoryCommand(program: Command): void {
                         { name: 'By author', value: 'author' },
                         { name: 'By date range', value: 'date' }
                     ],
+                },
+                {
+                    type: 'list',
+                    name: 'viewMode',
+                    message: 'Select view mode:',
+                    choices: [
+                        { name: 'Only current branch commits', value: 'current' },
+                        { name: 'Include merged commits', value: 'merged' }
+                    ],
                 }
             ]);
+
             let command = 'git log --pretty=oneline';
+            
+            if (viewMode === 'current') {
+                const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
+                command = `git log --pretty=oneline ${currentBranch} --not $(git for-each-ref --format='%(refname)' refs/heads/ | grep -v "refs/heads/${currentBranch}")`;
+            }
+
             if (filterType === 'keyword') {
                 const { keyword } = await inquirer.prompt([
                     {

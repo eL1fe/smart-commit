@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import { Command } from 'commander';
+import { loadConfig } from '../src/utils';
 import inquirer from 'inquirer';
 import { registerBranchCommand, sanitizeForBranch } from '../src/commands/branch';
 
@@ -8,6 +9,10 @@ jest.mock('child_process', () => ({
 }));
 jest.mock('inquirer', () => ({
     prompt: jest.fn(),
+}));
+jest.mock('../src/utils', () => ({
+    loadConfig: jest.fn(),
+    ensureGitRepo: jest.fn(),
 }));
 
 describe('sanitizeForBranch', () => {
@@ -61,12 +66,14 @@ describe('registerBranchCommand', () => {
         program = new Command();
         (execSync as jest.Mock).mockReset();
         (inquirer.prompt as unknown as jest.Mock).mockReset();
-
-        (execSync as jest.Mock).mockImplementation((cmd: string) => {
-            if (cmd.includes('git branch')) {
-                return "main\ndevelop\n";
+        (loadConfig as jest.Mock).mockReturnValue({
+            branch: {
+                template: "{type}/{ticketId}-{shortDesc}",
+                types: [
+                    { value: 'feat', description: 'Feature' },
+                    { value: 'fix', description: 'Bug fix' }
+                ]
             }
-            return "";
         });
     });
 

@@ -89,6 +89,9 @@ Smart Commit is a highly customizable CLI utility for creating Git commits inter
 - **sc history**
   - Searches commit history.
   - Offers search options by keyword, author, or date range.
+  - Provides different view modes via interactive prompt:
+    - **All commits:** Shows complete commit history
+    - **Current branch only:** Shows commits unique to the current branch
 
 - **sc config (or sc cfg)**
   - View and update Smart Commit settings.
