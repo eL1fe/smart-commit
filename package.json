@@ -1,7 +1,7 @@
 {
   "name": "@el1fe/smart-commit",
-  "version": "1.1.5",
-  "type": "module",
+  "version": "1.2.0",
+  "type": "commonjs",
   "description": "A highly customizable CLI tool for creating Git commits interactively.",
   "repository": "https://github.com/el1fe/smart-commit.git",
   "main": "dist/index.js",
@@ -14,10 +14,10 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "echo \"No tests specified\"",
     "prepublishOnly": "npm run build",
     "publish-npm": "npm publish --registry https://registry.npmjs.org --access public",
-    "publish-gh": "npm publish --registry https://npm.pkg.github.com --access public"
+    "publish-gh": "npm publish --registry https://npm.pkg.github.com --access public",
+    "test": "jest"
   },
   "files": [
     "dist"
@@ -31,15 +31,27 @@
   "author": "Pavel Piuro <piuro.pavel@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "chalk": "^5.4.1",
+    "chalk": "^4.1.2",
     "commander": "^13.1.0",
     "diff-so-fancy": "^1.4.3",
-    "inquirer": "^12.4.2"
+    "inquirer": "^8.2.0",
+    "inquirer-autocomplete-prompt": "^2.0.0",
+    "micromatch": "^4.0.8",
+    "parse-gitignore": "^2.0.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.26.9",
+    "@babel/preset-env": "^7.26.9",
     "@types/commander": "^2.12.0",
-    "@types/inquirer": "^9.0.7",
+    "@types/inquirer": "^8.2.0",
+    "@types/inquirer-autocomplete-prompt": "^2.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/micromatch": "^4.0.9",
     "@types/node": "^22.13.4",
+    "@types/parse-gitignore": "^1.0.2",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   }
