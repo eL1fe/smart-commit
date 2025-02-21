@@ -1,5 +1,10 @@
 # Smart Commit
 
+![npm version](https://img.shields.io/npm/v/%40el1fe/smart-commit)
+![npm downloads](https://img.shields.io/npm/dm/%40el1fe/smart-commit)
+![license](https://img.shields.io/npm/l/%40el1fe/smart-commit)
+![build](https://github.com/el1fe/smart-commit/actions/workflows/nodejs.yml/badge.svg)
+
 Smart Commit is a highly customizable CLI utility for creating Git commits interactively. It helps you produce consistent, well-formatted commit messages and branch names that integrate seamlessly with your development workflow.
 
 ## Features
@@ -219,6 +224,17 @@ npm install -g @el1fe/smart-commit
 ```
 
 After installation, the commands `smart-commit` and `sc` will be available in your terminal.
+
+## Installation via Homebrew
+
+For macOS (and Linux with Homebrew), you can install Smart Commit using the Homebrew tap:
+
+```bash
+brew tap el1fe/homebrew-smart-commit
+brew install smart-commit
+```
+
+This will download the pre-built binary from the GitHub Releases and install it as sc.
 
 ## Usage Examples
 

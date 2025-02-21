@@ -17,9 +17,9 @@ import { registerStatsCommand } from './commands/stats';
 inquirer.registerPrompt('autocomplete', inquirerAutocompletePrompt);
 
 program
-    .name('sc')
-    .description('Smart Commit CLI Tool - Create customizable Git commits with ease.')
-    .version('1.2.0');
+  .name('sc')
+  .description('Smart Commit CLI Tool - Create customizable Git commits with ease.')
+  .version('1.2.2');
 
 program.addHelpText('beforeAll', chalk.blue(`
 ========================================

@@ -1,6 +1,6 @@
 {
   "name": "@el1fe/smart-commit",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "type": "commonjs",
   "description": "A highly customizable CLI tool for creating Git commits interactively.",
   "repository": "https://github.com/el1fe/smart-commit.git",
